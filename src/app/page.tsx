@@ -1,103 +1,167 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useTheme } from 'next-themes';
+import Header from '@/components/Header';
+import StarField from '@/components/StarField';
+import ChatMessage from '@/components/ChatMessage';
+import LoadingAnimation from '@/components/LoadingAnimation';
+import QueryCategories from '@/components/QueryCategories';
+import SearchBar from '@/components/SearchBar';
+import IntroSection from '@/components/IntroSection';
+import { getDeepSeekService } from '@/utils/deepseekService';
+
+type Message = {
+  role: 'user' | 'assistant';
+  content: string;
+  sources?: Array<{ title: string; url: string }>;
+};
+
+export default function ChatPage() {
+  const { theme } = useTheme();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
+  const [showIntro, setShowIntro] = useState(true);
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const shouldShowIntro = showIntro && !isTyping && messages.length === 0;
+
+  const handleSearch = async (query: string) => {
+    if (!query?.trim()) return;
+    
+    // Add user message to chat
+    setMessages(prev => [...prev, { role: 'user', content: query }]);
+    setLoading(true);
+    
+    try {
+      // Format recent conversation history for the API
+      const messageHistory = messages
+        .slice(-5)
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }));
+      
+      // Use the deepseek service with fallback
+      const deepseekService = getDeepSeekService();
+      const result = await deepseekService.queryWithFallback(query, messageHistory, 'general');
+      
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: result.response
+      }]);
+    } catch (error) {
+      console.error('Query error:', error);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again later.'
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuestionSelect = (question: string) => {
+    handleSearch(question);
+    setShowCategories(false);
+  };
+
+  const handleClearChat = () => {
+    setMessages([]);
+    setShowIntro(true);
+  };
+
+  const toggleCategories = () => {
+    setShowCategories(prev => !prev);
+  };
+
+  const handleBackClick = () => {
+    setShowCategories(false);
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="min-h-screen flex flex-col">
+      <StarField starCount={150} />
+      
+      <Header />
+      
+      <motion.main 
+        className="flex-grow flex flex-col p-4 max-w-4xl mx-auto w-full"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="flex-grow overflow-y-auto mb-4">
+          <AnimatePresence>
+            {shouldShowIntro && (
+              <motion.div
+                key="intro"
+                initial={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <IntroSection />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          <AnimatePresence>
+            {messages.map((message, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ delay: index * 0.1, duration: 0.3 }}
+              >
+                <ChatMessage
+                  role={message.role}
+                  content={message.content}
+                  sources={message.sources}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          
+          <div ref={messagesEndRef} />
+          {loading && <LoadingAnimation />}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+
+        {showCategories ? (
+          <QueryCategories 
+            onQuestionSelect={handleQuestionSelect} 
+            onBackClick={handleBackClick} 
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
+        ) : (
+          <SearchBar 
+            onSearch={handleSearch} 
+            onClear={handleClearChat} 
+            onTyping={setIsTyping}
           />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+        )}
+
+        {!showCategories && (
+          <div className="p-2 bg-transparent flex justify-center">
+            <button 
+              onClick={toggleCategories}
+              className="text-blue-500 dark:text-blue-400 flex items-center gap-1 px-4 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            >
+              <span>Popular Questions</span>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 8.5L2 4.5H10L6 8.5Z" fill="currentColor"/>
+              </svg>
+            </button>
+          </div>
+        )}
+      </motion.main>
     </div>
   );
 }
