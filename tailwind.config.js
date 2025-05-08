@@ -17,6 +17,10 @@ module.exports = {
         '84': '21rem',
         '96': '24rem',
       },
+      boxShadow: {
+        'glow-yellow': '0 0 10px rgba(252, 211, 77, 0.7)',
+        'glow-blue': '0 0 10px rgba(96, 165, 250, 0.7)',
+      },
       typography: {
         DEFAULT: {
           css: {

@@ -1,20 +1,23 @@
 /**
- * A simple token counter utility
- * Note: For production, consider using a more accurate tokenizer like GPT Tokenizer
+ * Token counter utility using gpt-tokenizer for accurate token counting
  */
 
-// Simple approximation (1 token ≈ 4 chars for English text)
+import { encode } from 'gpt-tokenizer';
+
+/**
+ * Get an accurate token count using the gpt-tokenizer library
+ * @param text The text to count tokens for
+ * @returns The number of tokens in the text
+ */
 export function getTokenCount(text: string): number {
   if (!text) return 0;
   
-  // Simple approximation: ~4 characters per token for English
-  return Math.ceil(text.length / 4);
+  try {
+    // Use the accurate tokenizer
+    return encode(text).length;
+  } catch (error) {
+    // Fallback to simple approximation if tokenizer fails
+    console.warn('Tokenizer failed, using approximation instead:', error);
+    return Math.ceil(text.length / 4);
+  }
 }
-
-// For more accurate token counting, you can use a proper tokenizer library
-// Example with gpt-tokenizer:
-// import { encode } from 'gpt-tokenizer';
-// export function getTokenCount(text: string): number {
-//   if (!text) return 0;
-//   return encode(text).length;
-// }

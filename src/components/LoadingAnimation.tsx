@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 interface LoadingAnimationProps {
@@ -8,6 +8,21 @@ interface LoadingAnimationProps {
 const LoadingAnimation: React.FC<LoadingAnimationProps> = ({ 
   message = "Searching Kenyan real estate knowledge..." 
 }) => {
+  const [displayMessage, setDisplayMessage] = useState(message);
+  const messages = ["Searching Kenyan real estate knowledge...", "Reasoning..."];
+  
+  useEffect(() => {
+    // Set up interval to shuffle between messages
+    const interval = setInterval(() => {
+      setDisplayMessage(prevMessage => 
+        prevMessage === messages[0] ? messages[1] : messages[0]
+      );
+    }, 3000);
+    
+    // Clean up interval on component unmount
+    return () => clearInterval(interval);
+  }, []);
+  
   return (
     <motion.div 
       className="flex items-center my-4 ml-11"
@@ -28,7 +43,7 @@ const LoadingAnimation: React.FC<LoadingAnimationProps> = ({
           <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full" />
         </motion.div>
         
-        <span className="text-gray-600 dark:text-gray-300 text-sm">{message}</span>
+        <span className="text-gray-600 dark:text-gray-300 text-sm">{displayMessage}</span>
       </motion.div>
     </motion.div>
   );

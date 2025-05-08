@@ -1,83 +1,131 @@
-import React, { useState, KeyboardEvent, useEffect } from 'react';
-import { Send, Trash } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Send, X, Trash2 } from 'lucide-react';
+import AdRotator from './AdRotator';
 
 interface SearchBarProps {
   onSearch: (query: string) => void;
-  onClear?: () => void;
-  onTyping?: (isTyping: boolean) => void;
+  onClear: () => void;
+  onTyping?: (isTyping: boolean) => void; // Make it optional with ?
+  disabled?: boolean; // Add disabled prop for loading state
 }
 
-const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onClear, onTyping }) => {
+export default function SearchBar({ onSearch, onClear, onTyping, disabled = false }: SearchBarProps) {
   const [query, setQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (query.trim()) {
-      onSearch(query);
-      setQuery('');
-      // Notify parent that user is no longer typing
-      onTyping && onTyping(false);
-    }
+    if (!query.trim() || isLoading || disabled) return;
+    
+    setIsLoading(true);
+    await onSearch(query);
+    setQuery('');
+    setIsLoading(false);
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-    setQuery(newValue);
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setQuery(e.target.value);
+    // Check if onTyping is a function before calling it
+    if (typeof onTyping === 'function') {
+      onTyping(e.target.value.length > 0);
+    }
     
-    // Notify parent component about typing state
-    onTyping && onTyping(newValue.length > 0);
+    // Auto-resize textarea
+    const textarea = e.target;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 150)}px`;
   };
 
-  // Reset typing state when component unmounts
-  useEffect(() => {
-    return () => {
-      onTyping && onTyping(false);
-    };
-  }, [onTyping]);
+  const handleClear = () => {
+    setQuery('');
+    // Check if onTyping is a function before calling it
+    if (typeof onTyping === 'function') {
+      onTyping(false);
+    }
+    onClear();
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.focus();
+    }
+  };
 
   return (
-    <div className="p-2 sm:p-3 bg-gray-50 dark:bg-gray-800 rounded-b-lg transition-colors">
-      <form onSubmit={handleSubmit} className="flex items-center gap-1 sm:gap-2">
-        {onClear && (
-          <button 
+    <div className="w-full">
+      {isLoading && (
+        <div className="mb-4">
+          <div className="flex flex-col items-center justify-center">
+            <p className="text-gray-500 dark:text-gray-400 mb-2">
+              Get featured here...
+            </p>
+            <div className="flex space-x-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+            </div>
+          </div>
+          
+          {/* Ad Rotator Component */}
+          <AdRotator isVisible={isLoading} />
+        </div>
+      )}
+      
+      <form onSubmit={handleSubmit} className="relative">
+        <div className="relative flex items-center">
+          {/* Recycle bin button to clear chat history */}
+          <button
             type="button"
             onClick={onClear}
-            className="p-1 sm:p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="absolute left-3 z-10 text-gray-400 hover:text-red-500 transition-colors"
+            aria-label="Clear chat history"
           >
-            <Trash size={18} className="sm:w-5 sm:h-5" />
+            <Trash2 size={18} />
           </button>
-        )}
-        
-        <input
-          type="text"
-          value={query}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask about Kenyan real estate..."
-          className="flex-grow py-2 sm:py-3 px-3 sm:px-4 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-300 dark:focus:ring-blue-500 text-gray-700 dark:text-gray-200 transition-colors text-sm sm:text-base"
-        />
-        
-        <button
-          type="submit"
-          disabled={!query.trim()}
-          className={`p-2 sm:p-3 rounded-full transition-colors ${
-            query.trim() 
-              ? 'bg-blue-500 dark:bg-blue-600 text-white hover:bg-blue-600 dark:hover:bg-blue-700' 
-              : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
-          }`}
-        >
-          <Send size={18} className="sm:w-5 sm:h-5" />
-        </button>
+          
+          <textarea
+            ref={inputRef}
+            value={query}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask me anything about Kenyan real estate..."
+            className="w-full p-4 pl-10 pr-24 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[56px] max-h-[150px] overflow-y-auto"
+            disabled={isLoading || disabled}
+          />
+          
+          <div className="absolute right-2 flex items-center space-x-1">
+            {query && (
+              <button
+                type="button"
+                onClick={handleClear}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                aria-label="Clear input"
+              >
+                <X size={18} />
+              </button>
+            )}
+            
+            <button
+              type="submit"
+              disabled={!query.trim() || isLoading || disabled}
+              className={`p-2 rounded-full ${
+                !query.trim() || isLoading || disabled
+                  ? 'text-gray-400 bg-gray-100 dark:bg-gray-700 cursor-not-allowed'
+                  : 'text-white bg-blue-500 hover:bg-blue-600'
+              }`}
+              aria-label="Send message"
+            >
+              <Send size={18} />
+            </button>
+          </div>
+        </div>
       </form>
     </div>
   );
-};
-
-export default SearchBar;
+}

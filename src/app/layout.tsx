@@ -1,28 +1,24 @@
+import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/contexts/AuthContext';
-import { ThemeProvider } from '@/components/ThemeProvider';
+import { ThemeProvider } from 'next-themes';
+// Remove PostHogProvider import
+
 import './globals.css';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'RealtorGPT',
-  description: 'AI-powered real estate assistant',
+  title: 'RealtorGPT - Your AI Real Estate Assistant',
+  description: 'Get instant answers to all your Kenyan real estate questions',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-          <AuthProvider>
-            {children}
-          </AuthProvider>
+          <AuthProvider>{children}</AuthProvider>
         </ThemeProvider>
       </body>
     </html>

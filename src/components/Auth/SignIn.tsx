@@ -11,11 +11,10 @@ export default function SignIn() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [successToast, setSuccessToast] = useState(false);
+  const [error, setError] = useState(null);
   const router = useRouter();
 
-  const handleSignIn = async (e: React.FormEvent) => {
+  const handleSignIn = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
@@ -30,18 +29,13 @@ export default function SignIn() {
       
       // Check if we have a session before redirecting
       if (data && data.session) {
-        // Show success toast
-        setSuccessToast(true);
-        
-        // Redirect after a short delay to show the toast
-        setTimeout(() => {
-          router.push('/dashboard');
-        }, 1500);
+        // Immediately redirect to dashboard without displaying the toast
+        router.push('/dashboard');
       } else {
         throw new Error('No session created');
       }
       
-    } catch (error: any) {
+    } catch (error) {
       console.error("Sign in error:", error);
       setError(error.message || 'An error occurred during sign in');
       setLoading(false);
@@ -61,12 +55,8 @@ export default function SignIn() {
       });
   
       if (error) throw error;
-      
-      // For OAuth we can't show a toast here since the page will redirect to the provider
-      // The success toast would need to be shown after returning from the OAuth provider
-      // This would be handled in the callback route
-  
-    } catch (error: any) {
+      // For OAuth, the redirect happens automatically through the provider
+    } catch (error) {
       console.error("Google sign in error:", error);
       setError(error.message || 'An error occurred during Google sign in');
       setLoading(false);
@@ -75,21 +65,6 @@ export default function SignIn() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4">
-      {successToast && (
-        <motion.div 
-          initial={{ opacity: 0, y: -50 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-md shadow-lg z-50"
-        >
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            <span>Successfully signed in! Redirecting to dashboard...</span>
-          </div>
-        </motion.div>
-      )}
-      
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

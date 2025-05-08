@@ -1,12 +1,11 @@
 import React from 'react';
-import { Home } from 'lucide-react';
+import { Home, Menu, X } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
-import Image from 'next/image';
 import Link from 'next/link';
-import { useAuth } from '@/contexts/AuthContext';
+import { useState } from 'react';
 
 const Header: React.FC = () => {
-  const { user, signOut, isLoading } = useAuth();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
     <div className="w-full bg-[#131826] dark:bg-[#131826] p-4 flex items-center justify-between">
@@ -15,38 +14,47 @@ const Header: React.FC = () => {
         <Link href="/" className="text-white font-bold text-xl">RealtorGPT</Link>
       </div>
       
-      <div className="flex items-center gap-4">
+      {/* Mobile menu button */}
+      <button 
+        className="md:hidden text-white p-1"
+        onClick={() => setIsMenuOpen(!isMenuOpen)}
+        aria-label="Toggle menu"
+      >
+        {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+      </button>
+      
+      {/* Desktop navigation */}
+      <div className="hidden md:flex items-center gap-4">
         <ThemeToggle />
-        
-        {isLoading ? (
-          <div className="w-20 h-8 bg-gray-700 animate-pulse rounded-full"></div>
-        ) : user ? (
-          <div className="flex items-center gap-3">
-            <span className="text-white text-sm hidden md:inline-block">
-              {user.email}
-            </span>
-            <Link 
-              href="/dashboard"
-              className="text-white bg-blue-600 hover:bg-blue-500 rounded-full px-4 py-1.5 text-sm transition-colors"
-            >
-              Dashboard
-            </Link>
-            <button 
-              onClick={signOut}
-              className="text-white bg-transparent border border-gray-600 rounded-full px-4 py-1.5 text-sm hover:bg-gray-800 transition-colors"
-            >
-              Sign Out
-            </button>
-          </div>
-        ) : (
-          <Link 
-            href="/signin" 
-            className="text-white bg-transparent border border-gray-600 rounded-full px-4 py-1.5 text-sm hover:bg-gray-800 transition-colors"
-          >
-            Sign In
-          </Link>
-        )}
+        <Link href="/dashboard" className="text-white hover:text-gray-300 transition">
+          Dashboard
+        </Link>
       </div>
+      
+      {/* Mobile menu */}
+      {isMenuOpen && (
+        <div className="absolute top-16 left-0 right-0 bg-[#131826] z-50 p-4 flex flex-col gap-3 md:hidden shadow-lg">
+          <Link 
+            href="/chat" 
+            className="text-white bg-blue-600 hover:bg-blue-500 rounded-full px-4 py-2 text-center transition-colors"
+            onClick={() => setIsMenuOpen(false)}
+          >
+            Chat Now
+          </Link>
+          
+          <div className="flex justify-center py-2">
+            <ThemeToggle />
+          </div>
+          
+          <Link 
+            href="/dashboard"
+            className="text-white bg-blue-600 hover:bg-blue-500 rounded-full px-4 py-2 text-center transition-colors"
+            onClick={() => setIsMenuOpen(false)}
+          >
+            Dashboard
+          </Link>
+        </div>
+      )}
     </div>
   );
 };

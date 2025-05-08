@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/utils/supabase';
 
 // Constants
 const CORS_HEADERS = {
@@ -35,182 +34,91 @@ interface RequestBody {
 }
 
 // ==========================================
-// Auth & Rate Limiting Module
+// Input Validation Module
 // ==========================================
 
-class AuthService {
-  // Authenticate using Supabase session
-  static async isAuthenticated(req: NextRequest): Promise<boolean> {
-    try {
-      // Get the auth cookie from the request
-      const authCookie = req.cookies.get('sb-auth-token')?.value;
-      
-      if (!authCookie) {
-        return false;
-      }
-      
-      // Create a Supabase client with the auth cookie
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      
-      if (!supabaseUrl || !supabaseKey) {
-        console.error('Supabase credentials not configured');
-        return false;
-      }
-      
-      // Use the createClient function from @supabase/supabase-js
-      const { createClient } = require('@supabase/supabase-js');
-      const supabase = createClient(supabaseUrl, supabaseKey, {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-        },
-        global: {
-          headers: {
-            Authorization: `Bearer ${authCookie}`,
-          },
-        },
-      });
-      
-      // Get the user session
-      const { data, error } = await supabase.auth.getSession();
-      
-      if (error || !data.session) {
-        console.error('Auth error:', error);
-        return false;
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('Authentication error:', error);
+class InputValidator {
+  static validateMessage(message: string): boolean {
+    // Check if message is empty or too long
+    if (!message || message.trim() === '') {
       return false;
     }
+    
+    // Limit message length to prevent abuse
+    if (message.length > 2000) {
+      return false;
+    }
+    
+    return true;
+  }
+  
+  static validateMessageHistory(history?: Message[]): boolean {
+    if (!history) return true;
+    
+    // Limit history size to prevent abuse
+    if (history.length > 20) {
+      return false;
+    }
+    
+    // Validate each message in history
+    for (const msg of history) {
+      if (!msg.role || !['system', 'user', 'assistant'].includes(msg.role)) {
+        return false;
+      }
+      
+      if (!msg.content || msg.content.length > 2000) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+  
+  static validateContext(context?: string): boolean {
+    if (!context) return true;
+    return ['general', 'realtor'].includes(context);
   }
 }
 
+// No longer using authentication, relying on middleware rate limiting
 class RateLimitService {
-  // Use Supabase to track rate limits
+  // This is now handled by middleware
   static async getIpRequestCount(ip: string): Promise<number> {
-    try {
-      // Create Supabase client
-      const { createClient } = require('@supabase/supabase-js');
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      );
-      
-      // Get current timestamp for today
-      const today = new Date().toISOString().split('T')[0];
-      const key = `rate_limit:${ip}:${today}`;
-      
-      // Check if entry exists in KV store
-      const { data, error } = await supabase
-        .from('rate_limits')
-        .select('count')
-        .eq('key', key)
-        .single();
-      
-      if (error && error.code !== 'PGRST116') { // PGRST116 is the error code for no rows returned
-        console.error('Error getting rate limit count:', error);
-        return 0; // Default to 0 on error
-      }
-      
-      return data?.count || 0;
-    } catch (error) {
-      console.error('Failed to get request count:', error);
-      return 0; // Default to 0 on error
-    }
+    return 0; // Default count, actual limiting is in middleware
   }
 
   static async incrementIpRequestCount(ip: string): Promise<void> {
-    try {
-      // Create Supabase client
-      const { createClient } = require('@supabase/supabase-js');
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      );
-      
-      // Get current timestamp for today
-      const today = new Date().toISOString().split('T')[0];
-      const key = `rate_limit:${ip}:${today}`;
-      
-      // Upsert the rate limit record
-      const { error } = await supabase
-        .from('rate_limits')
-        .upsert(
-          { 
-            key, 
-            count: 1,
-            last_request: new Date().toISOString(),
-            ip_address: ip
-          },
-          { 
-            onConflict: 'key',
-            update: { 
-              count: supabase.sql('rate_limits.count + 1'),
-              last_request: new Date().toISOString() 
-            } 
-          }
-        );
-      
-      if (error) {
-        console.error('Error incrementing rate limit count:', error);
-      }
-    } catch (error) {
-      console.error('Failed to increment request count:', error);
-    }
+    console.warn("Using placeholder incrementIpRequestCount function");
+    // Example with Vercel KV:
+    // const key = `rate_limit_${ip}`;
+    // await kv.incr(key);
+    // await kv.expire(key, 60 * 60 * 24); // Expire after 24 hours
   }
 
   static async checkRateLimit(req: NextRequest): Promise<{ allowed: boolean; error?: string }> {
-    try {
-      const userIsAuthenticated = await AuthService.isAuthenticated(req);
-
-      // Log authentication status
-      console.log(`[RateLimit] User authenticated: ${userIsAuthenticated}`);
-
-      // Authenticated users have higher rate limits
-      if (userIsAuthenticated) {
-        // You could implement tiered rate limiting here based on user subscription level
-        return { allowed: true };
-      }
-
-      // Get IP address for rate limiting with fallbacks
-      const forwardedFor = req.headers.get('x-forwarded-for');
-      const ip = forwardedFor ? forwardedFor.split(',')[0].trim() : 
-               req.headers.get('x-real-ip') || 
-               req.ip || 
-               'unknown';
-      
-      if (ip === 'unknown') {
-        console.warn("Could not determine IP address for rate limiting.");
-        // Allow the request to proceed, but log the warning
-        return { allowed: true };
-      }
-
-      const currentCount = await this.getIpRequestCount(ip);
-      
-      // Log current request count
-      console.log(`[RateLimit] IP: ${ip}, Count: ${currentCount}`);
-      
-      // Check if user has exceeded the limit
-      if (currentCount >= RATE_LIMIT.UNAUTHENTICATED_LIMIT) {
-        // Log rate limit exceeded
-        console.warn(`[RateLimit] Rate limit exceeded for IP: ${ip}`);
-        return { 
-          allowed: false, 
-          error: "Loving our research? Please sign in to continue & access more value." 
-        };
-      }
-
-      // Increment count for the next request
-      await this.incrementIpRequestCount(ip);
-      return { allowed: true };
-    } catch (error) {
-      console.error('Rate limiting error:', error);
-      // On error, allow the request to proceed but log the error
+    // Authentication is no longer used, all requests are treated as unauthenticated
+    // Get IP address for rate limiting
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown';
+    
+    if (ip === 'unknown') {
+      console.warn("Could not determine IP address for rate limiting.");
+      // Allow the request to proceed, but log the warning
       return { allowed: true };
     }
+
+    const currentCount = await this.getIpRequestCount(ip);
+    
+    // Check if user has exceeded the limit
+    if (currentCount >= RATE_LIMIT.UNAUTHENTICATED_LIMIT) {
+      return { 
+        allowed: false, 
+        error: "Loving our research? Please sign in to continue & access more value." 
+      };
+    }
+
+    // Increment count for the next request
+    await this.incrementIpRequestCount(ip);
+    return { allowed: true };
   }
 }
 
@@ -390,53 +298,67 @@ export async function OPTIONS() {
   });
 }
 
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    // Parse the request body
+    const body = await req.json() as RequestBody;
+    const { message, messageHistory = [], context = "general" } = body;
     
-    if (!session) {
+    // Validate input
+    if (!InputValidator.validateMessage(message)) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: "Invalid message. Message is required and must be less than 2000 characters." }, 
+        { status: 400, headers: CORS_HEADERS }
       );
     }
-
-    const body = await request.json();
     
-    // Process the request and interact with Deepseek API
-    const result = await DeepSeekService.generateResponse(requestBody);
+    if (!InputValidator.validateMessageHistory(messageHistory)) {
+      return NextResponse.json(
+        { error: "Invalid message history. History must contain valid messages and be less than 20 messages." }, 
+        { status: 400, headers: CORS_HEADERS }
+      );
+    }
+    
+    if (!InputValidator.validateContext(context)) {
+      return NextResponse.json(
+        { error: "Invalid context. Context must be 'general' or 'realtor'." }, 
+        { status: 400, headers: CORS_HEADERS }
+      );
+    }
+    
+    // Check rate limit before processing
+    const rateLimitCheck = await RateLimitService.checkRateLimit(req);
+    if (!rateLimitCheck.allowed) {
+      return NextResponse.json(
+        { error: rateLimitCheck.error || "Rate limit exceeded" },
+        { status: 429, headers: CORS_HEADERS }
+      );
+    }
+    
+    // Process the request
+    const result = await DeepSeekService.generateResponse(body);
     
     return NextResponse.json(result, { headers: CORS_HEADERS });
+    
     
   } catch (error: unknown) {
     console.error('Error processing request:', error);
     
-    // Structured error handling with security in mind
-    if (error instanceof Error) {
-      if (error.name === 'AbortError') {
-        return NextResponse.json(
-          { error: 'Request timed out' },
-          { status: 504, headers: CORS_HEADERS } // Gateway Timeout
-        );
-      }
-      
-      if (error.message.includes('DeepSeek API key')) {
-        // Don't expose internal error details to clients
-        const safeErrorMessage = error.message.includes('API key') ?
-          'Authentication error with external service' :
-          'An unexpected error occurred';
-          
-        return NextResponse.json(
-          { error: safeErrorMessage },
-          { headers: CORS_HEADERS, status: 500 }
-        );
-      }
-    }
+    // Don't expose detailed error information to clients
+    const errorMessage = 'An error occurred while processing your request';
     
-    // Generic error handler
+    // Add security headers
+    const secureHeaders = {
+      ...CORS_HEADERS,
+      'Content-Security-Policy': "default-src 'self'",
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer'
+    };
+    
     return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
+      { error: errorMessage },
+      { status: 500, headers: secureHeaders }
     );
   }
 }

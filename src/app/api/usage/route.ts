@@ -2,16 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/utils/supabase';
 
 export async function GET(request: NextRequest) {
-  // Get user ID from session
-  const { data: { session } } = await supabase.auth.getSession();
-  const userId = session?.user?.id;
-
-  if (!userId) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    );
-  }
+  // Since we're not using auth, we'll provide general usage statistics
+  // This is a simplified approach for a public site
+  const userId = 'public-user'; // Using a fixed ID for public access
 
   // Get current month usage
   const { data: currentMonthUsage, error: currentMonthError } = await supabase.rpc(

@@ -1,78 +1,64 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/utils/supabase';
-import { getTokenCount } from '@/utils/tokenCounter';
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
-// Paths that should be metered
-const METERED_PATHS = ['/api/chat', '/api/query'];
+// Simple in-memory store for rate limiting
+// In production, use a distributed cache like Redis
+const ipRequestMap = new Map<string, { count: number; timestamp: number }>();
 
 export async function middleware(request: NextRequest) {
-  // Only meter specific API paths
-  if (!METERED_PATHS.some(path => request.nextUrl.pathname.startsWith(path))) {
-    return NextResponse.next();
-  }
-
-  // Get user ID from session
-  const { data: { session } } = await supabase.auth.getSession();
-  const userId = session?.user?.id;
-
-  if (!userId) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    );
-  }
-
-  // Clone the request to read the body
-  const requestClone = request.clone();
-  let body;
+  const response = NextResponse.next()
   
-  try {
-    body = await requestClone.json();
-  } catch (error) {
-    body = {};
-  }
-
-  // Get the input text to count tokens
-  const inputText = body.query || body.messages?.map((m: any) => m.content).join(' ') || '';
-  const inputTokenCount = getTokenCount(inputText);
-
-  // Store the request start time
-  const requestStartTime = Date.now();
-
-  // Process the request
-  const response = await NextResponse.next();
-
-  // Clone the response to read its body
-  const responseClone = response.clone();
-  let responseBody;
+  // Get client IP address properly
+  // Use X-Forwarded-For header or fall back to connection remote address
+  const forwardedFor = request.headers.get('x-forwarded-for')
+  const ip = forwardedFor ? forwardedFor.split(',')[0].trim() : 
+             request.headers.get('x-real-ip') || 
+             'unknown'
   
-  try {
-    responseBody = await responseClone.json();
-  } catch (error) {
-    responseBody = {};
+  // Only apply rate limiting to API routes
+  if (request.nextUrl.pathname.startsWith('/api/')) {
+    // Check if this is an API request
+    const currentTime = Date.now()
+    const windowMs = 60 * 1000 // 1 minute window
+    const maxRequests = 20 // Max requests per minute
+    
+    const requestData = ipRequestMap.get(ip) || { count: 0, timestamp: currentTime }
+    
+    // Reset if outside window
+    if (currentTime - requestData.timestamp > windowMs) {
+      requestData.count = 0
+      requestData.timestamp = currentTime
+    }
+    
+    // Increment request count
+    requestData.count++
+    ipRequestMap.set(ip, requestData)
+    
+    // Set headers for rate limit info
+    response.headers.set('X-RateLimit-Limit', maxRequests.toString())
+    response.headers.set('X-RateLimit-Remaining', Math.max(0, maxRequests - requestData.count).toString())
+    
+    // If exceeded limit, return 429 Too Many Requests
+    if (requestData.count > maxRequests) {
+      return NextResponse.json(
+        { error: 'Too many requests, please try again later.' },
+        { status: 429, headers: response.headers }
+      )
+    }
   }
 
-  // Get the response text to count tokens
-  const outputText = responseBody.response || responseBody.content || '';
-  const outputTokenCount = getTokenCount(outputText);
-
-  // Calculate request duration
-  const requestDuration = Date.now() - requestStartTime;
-
-  // Log usage to database
-  await supabase.from('usage_metrics').insert({
-    user_id: userId,
-    endpoint: request.nextUrl.pathname,
-    input_tokens: inputTokenCount,
-    output_tokens: outputTokenCount,
-    total_tokens: inputTokenCount + outputTokenCount,
-    duration_ms: requestDuration,
-    timestamp: new Date().toISOString(),
-  });
-
-  return response;
+  return response
 }
 
 export const config = {
-  matcher: ['/api/:path*'],
-};
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public (public files)
+     */
+    '/((?!_next/static|_next/image|favicon.ico|public).*)',
+  ],
+}

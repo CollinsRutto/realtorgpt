@@ -6,4 +6,26 @@ module.exports = {
   serverRuntimeConfig: {
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
   },
+  images: {
+    domains: ['www.princecapital.co.ke'], // Add any external domains you're loading images from
+  },
+  async rewrites() {
+    return [
+      // Remove these PostHog-related rewrites
+      // {
+      //   source: "/ingest/static/:path*",
+      //   destination: "https://us-assets.i.posthog.com/static/:path*",
+      // },
+      // {
+      //   source: "/ingest/:path*",
+      //   destination: "https://us.i.posthog.com/:path*",
+      // },
+      // {
+      //   source: "/ingest/decide",
+      //   destination: "https://us.i.posthog.com/decide",
+      // },
+    ];
+  },
+  // This is required to support PostHog trailing slash API requests
+  skipTrailingSlashRedirect: true,
 };
