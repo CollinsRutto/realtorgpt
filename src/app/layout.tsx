@@ -9,10 +9,7 @@ import React, { useEffect } from 'react';
 const inter = Inter({ subsets: ['latin'] });
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  useEffect(() => {
-    // Handle any root layout initialization here
-  }, []);
-
+  // Remove the empty useEffect since it's not doing anything
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
