@@ -4,11 +4,14 @@ import React, { useRef, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import { ArrowRight, ChevronDown } from 'lucide-react';
-import StarField from '@/components/StarField';
-import Header from '@/components/Header';
+import dynamic from 'next/dynamic';
 import { useTheme } from 'next-themes';
-import ShootingStars from '@/components/ShootingStars';
-import ChatPage from './chat/page';
+
+// Dynamically import client-side components
+const StarField = dynamic(() => import('@/components/StarField'), { ssr: false });
+const Header = dynamic(() => import('@/components/Header'), { ssr: false });
+const ShootingStars = dynamic(() => import('@/components/ShootingStars'), { ssr: false });
+const ChatPage = dynamic(() => import('./chat/page'), { ssr: false });
 
 // Feature Card Component
 const FeatureCard = ({ icon, title, description, color, delay }: { 
@@ -19,7 +22,16 @@ const FeatureCard = ({ icon, title, description, color, delay }: {
   delay: number;
 }) => {
   const { theme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  
+  // Ensure consistent rendering between server and client
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Default to dark theme for server-side rendering
+  const isDark = mounted ? theme === 'dark' : true;
   
   const gradientBg = {
     blue: 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%)',
@@ -35,7 +47,9 @@ const FeatureCard = ({ icon, title, description, color, delay }: {
   
   return (
     <motion.div 
-      className={`bg-white/10 backdrop-blur-sm p-6 rounded-xl overflow-hidden relative ${theme === 'dark' ? 'text-white' : 'text-gray-800'} border border-transparent hover:border-opacity-30 transition-all duration-300`}
+      className={`bg-white/10 backdrop-blur-sm p-6 rounded-xl overflow-hidden relative ${
+        isDark ? 'text-white' : 'text-gray-800'
+      } border border-transparent hover:border-opacity-30 transition-all duration-300`}
       initial={{ opacity: 0, y: 30 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.3 }}
@@ -61,13 +75,17 @@ const FeatureCard = ({ icon, title, description, color, delay }: {
       </motion.div>
       
       <motion.h3 
-        className={`text-xl font-bold mb-3 text-center ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}
+        className={`text-xl font-bold mb-3 text-center ${
+          isDark ? 'text-white' : 'text-gray-800'
+        }`}
         animate={{ scale: isHovered ? 1.05 : 1 }}
         transition={{ duration: 0.2 }}
       >
         {title}
       </motion.h3>
-      <p className={`text-center ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
+      <p className={`text-center ${
+        isDark ? 'text-gray-300' : 'text-gray-600'
+      }`}>
         {description}
       </p>
       
@@ -134,12 +152,8 @@ const IconLightning = () => (
 
 // Main HomePage Component
 const HomePage = () => {
-  // For single-page apps that just render the ChatPage
-  if (typeof window !== 'undefined' && window.location.pathname === '/') {
-    return <ChatPage />;
-  }
-
-  const ref = useRef(null);
+  // Remove the client-side only check since we're already using 'use client'
+  const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ 
     target: ref, 
     offset: ["start start", "end start"] 
@@ -386,3 +400,4 @@ const HomePage = () => {
     </div>
   );
 }
+export default HomePage;
