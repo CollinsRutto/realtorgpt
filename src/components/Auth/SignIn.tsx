@@ -14,7 +14,7 @@ export default function SignIn() {
   const [error, setError] = useState(null);
   const router = useRouter();
 
-  const handleSignIn = async (e) => {
+  const handleSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
