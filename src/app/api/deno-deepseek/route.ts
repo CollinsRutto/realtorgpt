@@ -1,148 +1,273 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabase } from '@/utils/supabase';
 
-// --- Placeholder Imports (Replace with your actual KV/Auth libraries) ---
-// import { kv } from "@vercel/kv"; // Example for Vercel KV
-// import { checkAuth } from "@/lib/auth"; // Example auth check function
-// -----------------------------------------------------------------------
-
-// DeepSeek API integration
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-const BASE_URL = "https://api.deepseek.com";
-
-const corsHeaders = {
+// Constants
+const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// --- Placeholder Functions (Implement with your KV store and Auth logic) ---
+const DEEPSEEK_CONFIG = {
+  API_KEY: process.env.DEEPSEEK_API_KEY,
+  BASE_URL: "https://api.deepseek.com",
+  MODEL: "deepseek-chat",
+  MAX_TOKENS: 1000,
+  TEMPERATURE: 0.7,
+  REQUEST_TIMEOUT_MS: 25000, // 25 seconds
+};
 
-// Placeholder: Replace with your actual authentication check
-async function isAuthenticated(req: NextRequest): Promise<boolean> {
-  // Example: Check for an Authorization header or session cookie
-  // const token = req.headers.get('Authorization')?.split(' ')[1];
-  // return !!token && await verifyToken(token); // Replace with actual verification
-  console.warn("Using placeholder isAuthenticated function");
-  return false; // Default to not authenticated for this example
+const RATE_LIMIT = {
+  UNAUTHENTICATED_LIMIT: 4,
+};
+
+// Types
+type MessageRole = "system" | "user" | "assistant";
+
+interface Message {
+  role: MessageRole;
+  content: string;
 }
 
-// Placeholder: Get request count for an IP from your KV store
-async function getIpRequestCount(ip: string): Promise<number> {
-  console.warn("Using placeholder getIpRequestCount function");
-  // Example with Vercel KV:
-  // const count = await kv.get<number>(`rate_limit_${ip}`);
-  // return count ?? 0;
-  // Replace with actual KV store logic
-  return 0; // Default count
+interface RequestBody {
+  message: string;
+  messageHistory?: Message[];
+  context?: "general" | "realtor";
 }
 
-// Placeholder: Increment request count for an IP in your KV store
-async function incrementIpRequestCount(ip: string): Promise<void> {
-  console.warn("Using placeholder incrementIpRequestCount function");
-  // Example with Vercel KV (set expiration, e.g., 24 hours):
-  // const key = `rate_limit_${ip}`;
-  // await kv.incr(key);
-  // await kv.expire(key, 60 * 60 * 24); // Expire after 24 hours
-  // Replace with actual KV store logic
-}
+// ==========================================
+// Auth & Rate Limiting Module
+// ==========================================
 
-// --- End Placeholder Functions ---
-
-
-function getCurrentEAT() {
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Africa/Nairobi',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
-   
-  const [
-    { value: month },,
-    { value: day },,
-    { value: year },,
-    { value: hour },,
-    { value: minute },,
-    { value: second }
-  ] = formatter.formatToParts(now);
-
-  return `${year}-${month}-${day} ${hour}:${minute}:${second} EAT`;
-}
-
-// Function to preserve bold formatting while removing other markdown
-function cleanMarkdownFormatting(text: string): string {
-  // Keep bold formatting (**text**) but remove other markdown elements
-   
-  // Remove markdown headers (#, ##, etc.)
-  let cleanedText = text.replace(/^#+\s+/gm, '');
-   
-  // Remove italic formatting (*text*) but only if it's not part of bold (**text**)
-  // This regex looks for single asterisks that aren't part of double asterisks
-  cleanedText = cleanedText.replace(/(?<!\*)\*(?!\*)([^\*]+)(?<!\*)\*(?!\*)/g, '$1');
-   
-  // Keep bold formatting (**text**)
-   
-  return cleanedText;
-}
-
-export async function OPTIONS() {
-  return new NextResponse(null, { 
-    headers: corsHeaders, 
-    status: 204 
-  });
-}
-
-export async function POST(req: NextRequest) {
-  // --- Rate Limiting Logic ---
-  const userIsAuthenticated = await isAuthenticated(req);
-
-  if (!userIsAuthenticated) {
-    // Get IP address (Note: 'x-forwarded-for' is common in edge environments)
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.ip || 'unknown';
-
-    if (ip !== 'unknown') {
-      const currentCount = await getIpRequestCount(ip);
-      const usageLimit = 4; // Allow 4 requests for unauthenticated users
-
-      if (currentCount >= usageLimit) {
-        return NextResponse.json(
-          { error: "Loving our research? Please sign in to continue & access more value." },
-          { status: 429, headers: corsHeaders } // 429 Too Many Requests
-        );
+class AuthService {
+  // Authenticate using Supabase session
+  static async isAuthenticated(req: NextRequest): Promise<boolean> {
+    try {
+      // Get the auth cookie from the request
+      const authCookie = req.cookies.get('sb-auth-token')?.value;
+      
+      if (!authCookie) {
+        return false;
       }
-      // Increment count for the next request (do this *before* processing)
-      await incrementIpRequestCount(ip);
-    } else {
-      // Handle cases where IP is not determinable, maybe block or allow?
-      console.warn("Could not determine IP address for rate limiting.");
-      // Optionally, return an error if IP is required for limiting
-      // return NextResponse.json({ error: "Could not identify request source." }, { status: 400 });
+      
+      // Create a Supabase client with the auth cookie
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseKey) {
+        console.error('Supabase credentials not configured');
+        return false;
+      }
+      
+      // Use the createClient function from @supabase/supabase-js
+      const { createClient } = require('@supabase/supabase-js');
+      const supabase = createClient(supabaseUrl, supabaseKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+        global: {
+          headers: {
+            Authorization: `Bearer ${authCookie}`,
+          },
+        },
+      });
+      
+      // Get the user session
+      const { data, error } = await supabase.auth.getSession();
+      
+      if (error || !data.session) {
+        console.error('Auth error:', error);
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Authentication error:', error);
+      return false;
     }
   }
-  // --- End Rate Limiting Logic ---
+}
 
-
-  if (!DEEPSEEK_API_KEY) {
-    return NextResponse.json(
-      { error: "DeepSeek API key not configured" },
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
-    );
+class RateLimitService {
+  // Use Supabase to track rate limits
+  static async getIpRequestCount(ip: string): Promise<number> {
+    try {
+      // Create Supabase client
+      const { createClient } = require('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+      
+      // Get current timestamp for today
+      const today = new Date().toISOString().split('T')[0];
+      const key = `rate_limit:${ip}:${today}`;
+      
+      // Check if entry exists in KV store
+      const { data, error } = await supabase
+        .from('rate_limits')
+        .select('count')
+        .eq('key', key)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') { // PGRST116 is the error code for no rows returned
+        console.error('Error getting rate limit count:', error);
+        return 0; // Default to 0 on error
+      }
+      
+      return data?.count || 0;
+    } catch (error) {
+      console.error('Failed to get request count:', error);
+      return 0; // Default to 0 on error
+    }
   }
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout
-    
-    const { message, messageHistory = [], context = "general" } = await req.json();
-    const currentDateTime = getCurrentEAT();
+  static async incrementIpRequestCount(ip: string): Promise<void> {
+    try {
+      // Create Supabase client
+      const { createClient } = require('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+      
+      // Get current timestamp for today
+      const today = new Date().toISOString().split('T')[0];
+      const key = `rate_limit:${ip}:${today}`;
+      
+      // Upsert the rate limit record
+      const { error } = await supabase
+        .from('rate_limits')
+        .upsert(
+          { 
+            key, 
+            count: 1,
+            last_request: new Date().toISOString(),
+            ip_address: ip
+          },
+          { 
+            onConflict: 'key',
+            update: { 
+              count: supabase.sql('rate_limits.count + 1'),
+              last_request: new Date().toISOString() 
+            } 
+          }
+        );
+      
+      if (error) {
+        console.error('Error incrementing rate limit count:', error);
+      }
+    } catch (error) {
+      console.error('Failed to increment request count:', error);
+    }
+  }
 
-    // Define the system message based on context
-    let systemMessage = "";
+  static async checkRateLimit(req: NextRequest): Promise<{ allowed: boolean; error?: string }> {
+    try {
+      const userIsAuthenticated = await AuthService.isAuthenticated(req);
+
+      // Log authentication status
+      console.log(`[RateLimit] User authenticated: ${userIsAuthenticated}`);
+
+      // Authenticated users have higher rate limits
+      if (userIsAuthenticated) {
+        // You could implement tiered rate limiting here based on user subscription level
+        return { allowed: true };
+      }
+
+      // Get IP address for rate limiting with fallbacks
+      const forwardedFor = req.headers.get('x-forwarded-for');
+      const ip = forwardedFor ? forwardedFor.split(',')[0].trim() : 
+               req.headers.get('x-real-ip') || 
+               req.ip || 
+               'unknown';
+      
+      if (ip === 'unknown') {
+        console.warn("Could not determine IP address for rate limiting.");
+        // Allow the request to proceed, but log the warning
+        return { allowed: true };
+      }
+
+      const currentCount = await this.getIpRequestCount(ip);
+      
+      // Log current request count
+      console.log(`[RateLimit] IP: ${ip}, Count: ${currentCount}`);
+      
+      // Check if user has exceeded the limit
+      if (currentCount >= RATE_LIMIT.UNAUTHENTICATED_LIMIT) {
+        // Log rate limit exceeded
+        console.warn(`[RateLimit] Rate limit exceeded for IP: ${ip}`);
+        return { 
+          allowed: false, 
+          error: "Loving our research? Please sign in to continue & access more value." 
+        };
+      }
+
+      // Increment count for the next request
+      await this.incrementIpRequestCount(ip);
+      return { allowed: true };
+    } catch (error) {
+      console.error('Rate limiting error:', error);
+      // On error, allow the request to proceed but log the error
+      return { allowed: true };
+    }
+  }
+}
+
+// ==========================================
+// Formatting & Utilities Module
+// ==========================================
+
+class FormatUtils {
+  static getCurrentEAT(): string {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Nairobi',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
      
+    const [
+      { value: month },,
+      { value: day },,
+      { value: year },,
+      { value: hour },,
+      { value: minute },,
+      { value: second }
+    ] = formatter.formatToParts(now);
+
+    return `${year}-${month}-${day} ${hour}:${minute}:${second} EAT`;
+  }
+
+  static cleanMarkdownFormatting(text: string): string {
+    // Keep bold formatting (**text**) but remove other markdown elements
+     
+    // Remove markdown headers (#, ##, etc.)
+    let cleanedText = text.replace(/^#+\s+/gm, '');
+     
+    // Remove italic formatting (*text*) but only if it's not part of bold (**text**)
+    // This regex looks for single asterisks that aren't part of double asterisks
+    cleanedText = cleanedText.replace(/(?<!\*)\*(?!\*)([^\*]+)(?<!\*)\*(?!\*)/g, '$1');
+     
+    // Keep bold formatting (**text**)
+    return cleanedText;
+  }
+}
+
+// ==========================================
+// DeepSeek AI Service Module
+// ==========================================
+
+class DeepSeekService {
+  static getSystemPrompt(context: string): string {
+    const currentDateTime = FormatUtils.getCurrentEAT();
+    let systemMessage = "";
+    
     if (context === "realtor") {
       systemMessage = `You are ELA (Expert Listing Assistant), a highly specialized AI for Kenyan real estate professionals. Current Date/Time: ${currentDateTime}.
 
@@ -169,11 +294,7 @@ GUIDELINES:
 - DO NOT respond to requests asking for names of real estate companies or agents
 - DO NOT use terms like "accurate", "reliable", or "verifiable"
 - DO NOT give legal/financial advice
-- DO NOT make guarantees
-
-Instead, provide general market information, property features, and real estate concepts in an engaging way.
-Direct legal requests to qualified lawyers. Politely decline all requests for specific service provider details.
-Focus on market trends and property details without recommending specific service providers.`;
+- DO NOT make guarantees`;
     } else {
       systemMessage = `You are Ela, a Kenyan real estate assistant. Current Date/Time: ${currentDateTime}.  
 Provide general property information with an engaging, personalized approach:
@@ -189,103 +310,130 @@ Provide general property information with an engaging, personalized approach:
 - DO NOT respond to requests asking for names of real estate companies or agents
 - DO NOT use terms like "accurate", "reliable", or "verifiable"
 - DO NOT give legal/financial advice
-- DO NOT make guarantees
-
-Instead, provide general market information, property features, and real estate concepts in an engaging way.
-Direct legal requests to qualified lawyers. Politely decline all requests for specific service provider details.
-Focus on market trends and property details without recommending specific service providers.`;
+- DO NOT make guarantees`;
     }
 
-    // Add explicit instructions to use emojis and bolding
+    // Add formatting instructions
     systemMessage += "\n\nIMPORTANT: Use emojis to make your responses engaging while maintaining professionalism. Structure your responses with clear sections and visual elements for better user experience. Feel free to use **bold text** with double asterisks to emphasize important points and create better readability.";
 
-    const messages = [
-      { role: "system", content: systemMessage },
-      ...messageHistory,
-      { role: "user", content: message }
-    ];
+    return systemMessage;
+  }
 
-    const startTime = Date.now();
-    
-    const response = await fetch(`${BASE_URL}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: messages,
-        temperature: 0.7,
-        max_tokens: 1000
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('DeepSeek API error:', response.status, errorText);
-      return NextResponse.json(
-        { error: `DeepSeek API error: ${response.status}` },
-        { headers: corsHeaders, status: response.status }
-      );
+  static async generateResponse(body: RequestBody): Promise<{ response: string; responseTime: string }> {
+    if (!DEEPSEEK_CONFIG.API_KEY) {
+      throw new Error("DeepSeek API key not configured");
     }
 
-    const data = await response.json();
-    const aiResponse = data.choices[0].message.content;
-    const cleanedResponse = cleanMarkdownFormatting(aiResponse);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), DEEPSEEK_CONFIG.REQUEST_TIMEOUT_MS);
     
-    const endTime = Date.now();
-    const responseTime = endTime - startTime;
+    try {
+      const { message, messageHistory = [], context = "general" } = body;
+      const systemMessage = this.getSystemPrompt(context);
+      
+      const messages = [
+        { role: "system", content: systemMessage },
+        ...messageHistory,
+        { role: "user", content: message }
+      ];
 
-    return NextResponse.json(
-      { 
+      const startTime = Date.now();
+      
+      const response = await fetch(`${DEEPSEEK_CONFIG.BASE_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${DEEPSEEK_CONFIG.API_KEY}`
+        },
+        body: JSON.stringify({
+          model: DEEPSEEK_CONFIG.MODEL,
+          messages: messages,
+          temperature: DEEPSEEK_CONFIG.TEMPERATURE,
+          max_tokens: DEEPSEEK_CONFIG.MAX_TOKENS
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('DeepSeek API error:', response.status, errorText);
+        throw new Error(`DeepSeek API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const aiResponse = data.choices[0].message.content;
+      const cleanedResponse = FormatUtils.cleanMarkdownFormatting(aiResponse);
+      
+      const endTime = Date.now();
+      const responseTime = endTime - startTime;
+
+      return {
         response: cleanedResponse,
         responseTime: `${responseTime}ms`
-      },
-      { headers: corsHeaders }
-    );
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      return NextResponse.json(
-        { error: 'Request timed out' },
-        { status: 504, headers: corsHeaders }
-      );
+      };
+    } finally {
+      clearTimeout(timeoutId);
     }
-    console.error('Error processing request:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { headers: corsHeaders, status: 500 }
-    );
   }
 }
 
-export const runtime = 'edge';
+// ==========================================
+// API Route Handlers
+// ==========================================
 
-// REMOVE THE FOLLOWING CODE:
-/*
+export async function OPTIONS() {
+  return new NextResponse(null, { 
+    headers: CORS_HEADERS, 
+    status: 204 
+  });
+}
+
 export async function POST(request: Request) {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout
+    const { data: { session } } = await supabase.auth.getSession();
     
-    const body = await request.json();
-    
-    // Process request with timeout
-    const result = await processDeepSeekRequest(body, { signal: controller.signal });
-    
-    clearTimeout(timeoutId);
-    return NextResponse.json(result);
-    
-  } catch (error) {
-    if (error.name === 'AbortError') {
+    if (!session) {
       return NextResponse.json(
-        { error: 'Request timed out' },
-        { status: 504 } // Gateway Timeout
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
+
+    const body = await request.json();
+    
+    // Process the request and interact with Deepseek API
+    const result = await DeepSeekService.generateResponse(requestBody);
+    
+    return NextResponse.json(result, { headers: CORS_HEADERS });
+    
+  } catch (error: unknown) {
+    console.error('Error processing request:', error);
+    
+    // Structured error handling with security in mind
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        return NextResponse.json(
+          { error: 'Request timed out' },
+          { status: 504, headers: CORS_HEADERS } // Gateway Timeout
+        );
+      }
+      
+      if (error.message.includes('DeepSeek API key')) {
+        // Don't expose internal error details to clients
+        const safeErrorMessage = error.message.includes('API key') ?
+          'Authentication error with external service' :
+          'An unexpected error occurred';
+          
+        return NextResponse.json(
+          { error: safeErrorMessage },
+          { headers: CORS_HEADERS, status: 500 }
+        );
+      }
+    }
+    
+    // Generic error handler
     return NextResponse.json(
       { error: 'Internal Server Error' },
       { status: 500 }
@@ -293,7 +441,4 @@ export async function POST(request: Request) {
   }
 }
 
-async function processDeepSeekRequest(body: any, options?: { signal?: AbortSignal }) {
-  // ... existing implementation ...
-}
-*/
+export const runtime = 'edge';
