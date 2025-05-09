@@ -12,9 +12,7 @@ const nextConfig = {
   serverRuntimeConfig: {
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
   },
-  images: {
-    domains: ['www.princecapital.co.ke'], // Add any external domains you're loading images from
-  },
+  // Images configuration moved to the export section below
   async rewrites() {
     return [
       // Remove these PostHog-related rewrites
@@ -32,8 +30,13 @@ const nextConfig = {
       // },
     ];
   },
-  // This is required to support PostHog trailing slash API requests
-  skipTrailingSlashRedirect: true,
+  // Output configuration for static hosting
+  output: 'export',
+  // Disable image optimization for static export
+  images: {
+    domains: ['www.princecapital.co.ke'],
+    unoptimized: true
+  },
 };
 
 module.exports = nextConfig

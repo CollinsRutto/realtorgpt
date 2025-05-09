@@ -16,11 +16,7 @@ function MyApp({ Component, pageProps }) {
     }
   }, []);
 
-  // Remove this empty useEffect as it's not doing anything
-  // useEffect(() => {
-  //   // Your code that was previously at the top level
-  //   // For example, registering service worker or analytics
-  // }, []);
+  // Service worker is properly registered above, no need for additional useEffect hooks
 
   return <Component {...pageProps} />;
 }
