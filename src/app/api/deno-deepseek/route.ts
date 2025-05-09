@@ -15,10 +15,6 @@ const DEEPSEEK_CONFIG = {
   REQUEST_TIMEOUT_MS: 25000, // 25 seconds
 };
 
-const RATE_LIMIT = {
-  UNAUTHENTICATED_LIMIT: 4,
-};
-
 // Types
 type MessageRole = "system" | "user" | "assistant";
 
@@ -77,50 +73,6 @@ class InputValidator {
   static validateContext(context?: string): boolean {
     if (!context) return true;
     return ['general', 'realtor'].includes(context);
-  }
-}
-
-// No longer using authentication, relying on middleware rate limiting
-// Remove or use the RateLimitService class properly
-// The middleware is already handling rate limiting, so this class is redundant
-class RateLimitService {
-  // This is now handled by middleware
-  static async getIpRequestCount(ip: string): Promise<number> {
-    return 0; // Default count, actual limiting is in middleware
-  }
-
-  static async incrementIpRequestCount(ip: string): Promise<void> {
-    console.warn("Using placeholder incrementIpRequestCount function");
-    // Example with Vercel KV:
-    // const key = `rate_limit_${ip}`;
-    // await kv.incr(key);
-    // await kv.expire(key, 60 * 60 * 24); // Expire after 24 hours
-  }
-
-  static async checkRateLimit(req: NextRequest): Promise<{ allowed: boolean; error?: string }> {
-    // Authentication is no longer used, all requests are treated as unauthenticated
-    // Get IP address for rate limiting
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown';
-    
-    if (ip === 'unknown') {
-      console.warn("Could not determine IP address for rate limiting.");
-      // Allow the request to proceed, but log the warning
-      return { allowed: true };
-    }
-
-    const currentCount = await this.getIpRequestCount(ip);
-    
-    // Check if user has exceeded the limit
-    if (currentCount >= RATE_LIMIT.UNAUTHENTICATED_LIMIT) {
-      return { 
-        allowed: false, 
-        error: "Loving our research? Please sign in to continue & access more value." 
-      };
-    }
-
-    // Increment count for the next request
-    await this.incrementIpRequestCount(ip);
-    return { allowed: true };
   }
 }
 
@@ -328,20 +280,19 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    // Check rate limit before processing
-    const rateLimitCheck = await RateLimitService.checkRateLimit(req);
-    if (!rateLimitCheck.allowed) {
-      return NextResponse.json(
-        { error: rateLimitCheck.error || "Rate limit exceeded" },
-        { status: 429, headers: CORS_HEADERS }
-      );
-    }
+    // Remove rate limit check since it's handled by middleware
+    // const rateLimitCheck = await RateLimitService.checkRateLimit(req);
+    // if (!rateLimitCheck.allowed) {
+    //   return NextResponse.json(
+    //     { error: rateLimitCheck.error || "Rate limit exceeded" },
+    //     { status: 429, headers: CORS_HEADERS }
+    //   );
+    // }
     
     // Process the request
     const result = await DeepSeekService.generateResponse(body);
     
     return NextResponse.json(result, { headers: CORS_HEADERS });
-    
     
   } catch (error: unknown) {
     console.error('Error processing request:', error);
