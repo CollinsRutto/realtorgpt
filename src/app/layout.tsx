@@ -4,12 +4,12 @@ import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import './globals.css';
-import React, { useEffect } from 'react';
+import React from 'react';
 
 const inter = Inter({ subsets: ['latin'] });
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Remove the empty useEffect since it's not doing anything
+  // Remove empty useEffect hook
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>

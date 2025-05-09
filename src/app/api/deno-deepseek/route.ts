@@ -81,6 +81,8 @@ class InputValidator {
 }
 
 // No longer using authentication, relying on middleware rate limiting
+// Remove or use the RateLimitService class properly
+// The middleware is already handling rate limiting, so this class is redundant
 class RateLimitService {
   // This is now handled by middleware
   static async getIpRequestCount(ip: string): Promise<number> {
