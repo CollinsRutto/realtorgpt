@@ -31,8 +31,8 @@
   NODE_VERSION = "18"
   NPM_FLAGS = "--no-audit --no-fund"
 
-# Handle client-side routing
+# Handle client-side routing - updated for Next.js
 [[redirects]]
   from = "/*"
-  to = "/index.html"
+  to = "/.netlify/functions/nextjs-server"
   status = 200
